@@ -14,8 +14,8 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 # Глобальные переменные
 last_peak = 0
 last_exit_time = 0
-REENTRY_COOLDOWN = 1800  # 30 минут
-REENTRY_THRESHOLD = 1.01  # +1% от пика
+REENTRY_COOLDOWN = 1800        # 30 минут
+REENTRY_THRESHOLD = 1.01       # +1% от пика
 price_window = deque(maxlen=720)  # 720 минут (12 часов)
 
 def get_price():
@@ -55,16 +55,16 @@ def sell_all(qty):
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
 def wait_for_5_percent_pump():
-    print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
+    print("[ПОИСК] Ожидание +5% от локального минимума (12ч)...")
     while True:
         current = get_price()
         price_window.append(current)
         local_min = min(price_window)
 
-        print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
+        print(f"[МИНИМУМ] Текущая цена: {current}, Минимум за 12ч: {local_min}")
 
         if current >= local_min * 1.05:
-            print(f"[ВХОД] Цена выросла на +5% от минимума: {local_min} → {current}")
+            print(f"[ВХОД] Цена выросла на +5%: {local_min} → {current}")
             return current
         time.sleep(60)
 
@@ -76,8 +76,9 @@ def track_trade(entry_price, qty):
         if price > peak:
             peak = price
         elif price <= peak * 0.97:
-            print(f"[ВЫХОД] Цена упала на -3% от пика: {peak} → {price}")
+            print(f"[ВЫХОД] -3% от пика: {peak} → {price}")
             sell_all(qty)
+            price_window.clear()  # сбрасываем старые минимумы
             last_peak = peak
             last_exit_time = time.time()
             return
@@ -89,22 +90,22 @@ def run_bot():
         now = time.time()
         price = get_price()
 
-        # Повторный вход при пробое предыдущего high +2%
+        # Повторный вход после выхода
         if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
             if price >= last_peak * REENTRY_THRESHOLD:
-                print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +2%: {price} (пик был {last_peak})")
+                print(f"[ПОВТОРНЫЙ ВХОД] Превышение пика +1%: {last_peak} → {price}")
                 qty = buy_all()
                 track_trade(price, qty)
-                print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
+                print("[ОЖИДАНИЕ] Пауза 10 минут...")
                 time.sleep(600)
                 continue
 
-        # Основной вход по +5% от минимума за 12ч
-        print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
+        # Стандартный вход по +5% от минимума
+        print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% от минимума...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
-        print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
+        print("[ОЖИДАНИЕ] Пауза 10 минут...")
         time.sleep(600)
 
 if __name__ == "__main__":
