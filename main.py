@@ -11,8 +11,12 @@ api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# 🔧 Быстрый режим: True — без паузы, False — с паузой 10 минут
-FAST_MODE = False
+# Настройки стратегии
+MIN_TRACKING_MINUTES = 720     # минимум за 12 часов
+SLEEP_SECONDS = 10             # пауза между проверками (в секундах)
+ENTRY_TRIGGER = 1.05           # вход при +5% от дна
+EXIT_TRIGGER = 0.97            # выход при -3% от пика
+FAST_MODE = False              # True = без паузы между сделками
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -51,18 +55,18 @@ def sell_all(qty):
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
 def wait_for_5_percent_from_local_min():
-    price_window = deque(maxlen=60)  # 10 минут по 10 сек
+    price_window = deque(maxlen=MIN_TRACKING_MINUTES * (60 // SLEEP_SECONDS))
     while True:
         price = get_price()
         price_window.append(price)
 
         local_min = min(price_window)
-        if price >= local_min * 1.05:
+        if price >= local_min * ENTRY_TRIGGER:
             print(f"[ВХОД] Цена выросла на +5% от минимума: {local_min} → {price}")
             return price
 
-        print(f"[ОЖИДАНИЕ] Текущая цена: {price}, минимум за 10 мин: {local_min}")
-        time.sleep(10)
+        print(f"[ОЖИДАНИЕ] Текущая цена: {price}, минимум за {MIN_TRACKING_MINUTES} мин: {local_min}")
+        time.sleep(SLEEP_SECONDS)
 
 def track_trade(entry_price, qty):
     peak = entry_price
@@ -70,11 +74,11 @@ def track_trade(entry_price, qty):
         price = get_price()
         if price > peak:
             peak = price
-        elif price <= peak * 0.97:
+        elif price <= peak * EXIT_TRIGGER:
             print(f"[ВЫХОД] Цена упала на -3% от пика: {peak} → {price}")
             sell_all(qty)
             break
-        time.sleep(10)
+        time.sleep(SLEEP_SECONDS)
 
 def run_bot():
     while True:
@@ -84,7 +88,7 @@ def run_bot():
         track_trade(entry_price, qty)
 
         if not FAST_MODE:
-            print("[ОЖИДАНИЕ] Пауза 10 минут перед новой сделкой...")
+            print("[ПАУЗА] Ждём 10 минут перед следующей сделкой...")
             time.sleep(600)
 
 if __name__ == "__main__":
