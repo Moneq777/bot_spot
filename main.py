@@ -14,8 +14,8 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 # Глобальные переменные
 last_peak = 0
 last_exit_time = 0
-REENTRY_COOLDOWN = 10800  # 3 часа
-REENTRY_THRESHOLD = 1.02  # +2% от пика
+REENTRY_COOLDOWN = 1800  # 30 минут
+REENTRY_THRESHOLD = 1.01  # +1% от пика
 price_window = deque(maxlen=720)  # 720 минут (12 часов)
 
 def get_price():
