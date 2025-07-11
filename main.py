@@ -16,7 +16,7 @@ last_peak = 0
 last_exit_time = 0
 REENTRY_COOLDOWN = 10800  # 3 часа
 REENTRY_THRESHOLD = 1.02  # +2% от пика
-price_window = deque(maxlen=720)  # 720 последних минут (12 часов)
+price_window = deque(maxlen=720)  # 720 минут (12 часов)
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -55,7 +55,7 @@ def sell_all(qty):
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
 def wait_for_5_percent_pump():
-    print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (720 мин)...")
+    print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
     while True:
         current = get_price()
         price_window.append(current)
@@ -66,7 +66,7 @@ def wait_for_5_percent_pump():
         if current >= local_min * 1.05:
             print(f"[ВХОД] Цена выросла на +5% от минимума: {local_min} → {current}")
             return current
-        time.sleep(10)
+        time.sleep(60)
 
 def track_trade(entry_price, qty):
     global last_peak, last_exit_time
@@ -81,7 +81,7 @@ def track_trade(entry_price, qty):
             last_peak = peak
             last_exit_time = time.time()
             return
-        time.sleep(10)
+        time.sleep(60)
 
 def run_bot():
     global last_peak, last_exit_time
@@ -99,7 +99,7 @@ def run_bot():
                 time.sleep(600)
                 continue
 
-        # Основной вход от +5% от минимума за 12ч
+        # Основной вход по +5% от минимума за 12ч
         print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
