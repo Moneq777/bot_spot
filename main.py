@@ -1,6 +1,5 @@
 import os
 import time
-from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
@@ -11,12 +10,11 @@ api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# Настройки стратегии
-MIN_TRACKING_MINUTES = 720     # минимум за 12 часов
-SLEEP_SECONDS = 10             # пауза между проверками (в секундах)
-ENTRY_TRIGGER = 1.05           # вход при +5% от дна
-EXIT_TRIGGER = 0.97            # выход при -3% от пика
-FAST_MODE = False              # True = без паузы между сделками
+# Глобальные переменные
+last_peak = 0
+last_exit_time = 0
+REENTRY_COOLDOWN = 10800  # 3 часа
+REENTRY_THRESHOLD = 1.02  # +2% от предыдущего high
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -54,46 +52,53 @@ def sell_all(qty):
     )
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
-def wait_for_5_percent_from_local_min():
-    price_window = deque(maxlen=MIN_TRACKING_MINUTES * (60 // SLEEP_SECONDS))
+def wait_for_5_percent_pump():
+    start_price = get_price()
     while True:
-        price = get_price()
-        price_window.append(price)
-
-        local_min = min(price_window)
-        if price >= local_min * ENTRY_TRIGGER:
-            print(f"[ВХОД] Цена выросла на +5% от минимума: {local_min} → {price}")
-            return price
-
-        print(f"[ОЖИДАНИЕ] Текущая цена: {price}, минимум за {MIN_TRACKING_MINUTES} мин: {local_min}")
-        time.sleep(SLEEP_SECONDS)
+        current = get_price()
+        if current >= start_price * 1.05:
+            print(f"[ВХОД] Цена выросла на +5%: {current}")
+            return current
+        time.sleep(10)
 
 def track_trade(entry_price, qty):
+    global last_peak, last_exit_time
     peak = entry_price
     while True:
         price = get_price()
         if price > peak:
             peak = price
-        elif price <= peak * EXIT_TRIGGER:
+        elif price <= peak * 0.97:
             print(f"[ВЫХОД] Цена упала на -3% от пика: {peak} → {price}")
             sell_all(qty)
-            break
-        time.sleep(SLEEP_SECONDS)
+            last_peak = peak
+            last_exit_time = time.time()
+            return
+        time.sleep(10)
 
 def run_bot():
+    global last_peak, last_exit_time
     while True:
-        print("\n[ОЖИДАНИЕ СИГНАЛА] Следим за локальным минимумом...")
-        entry_price = wait_for_5_percent_from_local_min()
+        now = time.time()
+        price = get_price()
+
+        # Повторный вход по пробою предыдущего high +2%
+        if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
+            if price >= last_peak * REENTRY_THRESHOLD:
+                print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила {REENTRY_THRESHOLD*100 - 100:.0f}% от предыдущего high: {price}")
+                qty = buy_all()
+                track_trade(price, qty)
+                print("[ОЖИДАНИЕ] Пауза 10 минут перед новым циклом...")
+                time.sleep(600)
+                continue
+
+        # Основной вход от дна +5%
+        print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
+        entry_price = wait_for_5_percent_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
-
-        if not FAST_MODE:
-            print("[ПАУЗА] Ждём 10 минут перед следующей сделкой...")
-            time.sleep(600)
+        print("[ОЖИДАНИЕ] Пауза 10 минут перед новым циклом...")
+        time.sleep(600)
 
 if __name__ == "__main__":
-    try:
-        run_bot()
-    except Exception as e:
-        print("⚠️ Ошибка в работе бота:", e)
-        time.sleep(30)
+    run_bot()
