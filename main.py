@@ -1,5 +1,6 @@
 import os
 import time
+from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
@@ -14,7 +15,8 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 last_peak = 0
 last_exit_time = 0
 REENTRY_COOLDOWN = 10800  # 3 часа
-REENTRY_THRESHOLD = 1.02  # +2% от последнего пика
+REENTRY_THRESHOLD = 1.02  # +2% от пика
+price_window = deque(maxlen=720)  # 720 последних минут (12 часов)
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -53,13 +55,17 @@ def sell_all(qty):
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
 def wait_for_5_percent_pump():
-    start_price = get_price()
+    print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (720 мин)...")
     while True:
         current = get_price()
-        if current >= start_price * 1.05:
-            print(f"[ВХОД] Цена выросла на +5%: {current}")
+        price_window.append(current)
+        local_min = min(price_window)
+
+        print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
+
+        if current >= local_min * 1.05:
+            print(f"[ВХОД] Цена выросла на +5% от минимума: {local_min} → {current}")
             return current
-        print(f"[МИНИМУМ] Ожидание роста: текущая цена = {current}, стартовая = {start_price}")
         time.sleep(10)
 
 def track_trade(entry_price, qty):
@@ -83,7 +89,7 @@ def run_bot():
         now = time.time()
         price = get_price()
 
-        # Повторный вход при пробое предыдущего пика +2%
+        # Повторный вход при пробое предыдущего high +2%
         if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
             if price >= last_peak * REENTRY_THRESHOLD:
                 print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +2%: {price} (пик был {last_peak})")
@@ -93,7 +99,7 @@ def run_bot():
                 time.sleep(600)
                 continue
 
-        # Основной вход по +5% от локального минимума
+        # Основной вход от +5% от минимума за 12ч
         print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
