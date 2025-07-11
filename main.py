@@ -14,7 +14,7 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 last_peak = 0
 last_exit_time = 0
 REENTRY_COOLDOWN = 10800  # 3 часа
-REENTRY_THRESHOLD = 1.02  # +2% от предыдущего high
+REENTRY_THRESHOLD = 1.02  # +2% от последнего пика
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -59,6 +59,7 @@ def wait_for_5_percent_pump():
         if current >= start_price * 1.05:
             print(f"[ВХОД] Цена выросла на +5%: {current}")
             return current
+        print(f"[МИНИМУМ] Ожидание роста: текущая цена = {current}, стартовая = {start_price}")
         time.sleep(10)
 
 def track_trade(entry_price, qty):
@@ -82,22 +83,22 @@ def run_bot():
         now = time.time()
         price = get_price()
 
-        # Повторный вход по пробою предыдущего high +2%
+        # Повторный вход при пробое предыдущего пика +2%
         if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
             if price >= last_peak * REENTRY_THRESHOLD:
-                print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила {REENTRY_THRESHOLD*100 - 100:.0f}% от предыдущего high: {price}")
+                print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +2%: {price} (пик был {last_peak})")
                 qty = buy_all()
                 track_trade(price, qty)
-                print("[ОЖИДАНИЕ] Пауза 10 минут перед новым циклом...")
+                print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
                 time.sleep(600)
                 continue
 
-        # Основной вход от дна +5%
+        # Основной вход по +5% от локального минимума
         print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
-        print("[ОЖИДАНИЕ] Пауза 10 минут перед новым циклом...")
+        print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
 
 if __name__ == "__main__":
