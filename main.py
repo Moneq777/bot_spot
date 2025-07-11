@@ -1,6 +1,3 @@
-Вот финальная версия кода — просто скопируй и вставь в `main.py`:
-
-```python
 import os
 import time
 from collections import deque
@@ -14,12 +11,11 @@ api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# Глобальные переменные
 last_peak = 0
 last_exit_time = 0
-REENTRY_COOLDOWN = 1800  # 30 минут
-REENTRY_THRESHOLD = 1.01  # +1% от пика
-price_window = deque(maxlen=720)  # 720 минут (12 часов)
+REENTRY_COOLDOWN = 1800
+REENTRY_THRESHOLD = 1.01
+price_window = deque(maxlen=720)
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -63,10 +59,8 @@ def wait_for_5_percent_pump():
         current = get_price()
         price_window.append(current)
         local_min = min(price_window)
-
         print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
-
-        if current >= local_min * 1.052:  # +5.2% от минимума с учётом комиссии
+        if current >= local_min * 1.052:
             print(f"[ВХОД] Цена выросла на +5.2% от минимума: {local_min} → {current}")
             return current
         time.sleep(60)
@@ -75,25 +69,23 @@ def track_trade(entry_price, qty):
     global last_peak, last_exit_time
     peak = entry_price
     below_threshold_counter = 0
-
     while True:
         price = get_price()
         if price > peak:
             peak = price
             below_threshold_counter = 0
-        elif price <= peak * 0.972:  # -2.8% от пика с учётом комиссии
+        elif price <= peak * 0.972:
             below_threshold_counter += 1
             print(f"[НИЖЕ -2.8%] {below_threshold_counter} мин: {price} от пика {peak}")
             if below_threshold_counter >= 3:
                 print(f"[ВЫХОД] Удержание -2.8% от пика: {peak} → {price}")
                 sell_all(qty)
-                price_window.clear()  # обнуляем минимум после выхода
+                price_window.clear()
                 last_peak = peak
                 last_exit_time = time.time()
                 return
         else:
             below_threshold_counter = 0
-
         time.sleep(60)
 
 def run_bot():
@@ -101,8 +93,6 @@ def run_bot():
     while True:
         now = time.time()
         price = get_price()
-
-        # Повторный вход по +1% от предыдущего пика
         if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
             if price >= last_peak * REENTRY_THRESHOLD:
                 print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +1%: {price} (пик был {last_peak})")
@@ -111,7 +101,6 @@ def run_bot():
                 print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
                 time.sleep(600)
                 continue
-
         print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
@@ -121,6 +110,3 @@ def run_bot():
 
 if __name__ == "__main__":
     run_bot()
-```
-
-Если хочешь — могу сделать версию под другую монету, другой процент входа или другие условия.
