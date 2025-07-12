@@ -15,14 +15,7 @@ last_peak = 0
 last_exit_time = 0
 REENTRY_COOLDOWN = 1800  # 30 минут
 REENTRY_THRESHOLD = 1.01
-price_window = deque(maxlen=720)
-
-def preload_prices():
-    print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
-    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
-    closes = [float(c["close"]) for c in candles["result"]["list"]]
-    price_window.extend(closes)
-    print(f"[ЗАГРУЖЕНО] Добавлено {len(closes)} точек в price_window.")
+price_window = deque(maxlen=720)  # 12 часов при интервале 1 минута
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -55,7 +48,7 @@ def buy_all():
 
 def sell_all(qty):
     if qty <= 0:
-        print("[ОШИБКА] Количество для продажи равно 0.")
+        print("[ОШИБКА] Нечего продавать.")
         return
     client.place_order(
         category="spot",
@@ -65,6 +58,13 @@ def sell_all(qty):
         qty=qty
     )
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
+
+def preload_prices():
+    print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
+    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
+    closes = [float(c[4]) for c in candles["result"]["list"]]  # c[4] = close price
+    price_window.extend(closes)
+    print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
 
 def wait_for_5_percent_pump():
     print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
