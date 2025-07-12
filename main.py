@@ -13,9 +13,9 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 
 last_peak = 0
 last_exit_time = 0
-REENTRY_COOLDOWN = 1800  # 30 минут
+REENTRY_COOLDOWN = 1800
 REENTRY_THRESHOLD = 1.01
-price_window = deque(maxlen=720)  # 12 часов при интервале 1 минута
+price_window = deque(maxlen=720)
 
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
@@ -34,7 +34,7 @@ def buy_all():
     price = get_price()
     qty = round(usdt / price, 6)
     if qty <= 0:
-        print("[ОШИБКА] Недостаточно средств для покупки.")
+        print("[ОШИБКА] Рассчитано 0 монет для покупки — пропуск.")
         return 0
     client.place_order(
         category="spot",
@@ -48,7 +48,7 @@ def buy_all():
 
 def sell_all(qty):
     if qty <= 0:
-        print("[ОШИБКА] Нечего продавать.")
+        print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
         return
     client.place_order(
         category="spot",
@@ -61,13 +61,19 @@ def sell_all(qty):
 
 def preload_prices():
     print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
-    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
-    closes = [float(c[4]) for c in candles["result"]["list"]]  # c[4] = close price
+    candles = client.get_kline(
+        category="spot",
+        symbol=symbol,
+        interval="1",
+        limit=720
+    )
+    closes = [float(c[4]) for c in candles["result"]["list"]]
     price_window.extend(closes)
     print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
+    print(f"[СТАТИСТИКА] Минимум за 12ч: {min(closes)}, максимум: {max(closes)}")
 
 def wait_for_5_percent_pump():
-    print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
+    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
     while True:
         current = get_price()
         price_window.append(current)
@@ -111,16 +117,14 @@ def run_bot():
             if price >= last_peak * REENTRY_THRESHOLD:
                 print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +1%: {price} (пик был {last_peak})")
                 qty = buy_all()
-                if qty > 0:
-                    track_trade(price, qty)
+                track_trade(price, qty)
                 print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
                 time.sleep(600)
                 continue
-        print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
+        print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
-        if qty > 0:
-            track_trade(entry_price, qty)
+        track_trade(entry_price, qty)
         print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
 
