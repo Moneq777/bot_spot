@@ -13,50 +13,83 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 
 last_peak = 0
 last_exit_time = 0
-REENTRY_COOLDOWN = 1800
+REENTRY_COOLDOWN = 1800  # 30 минут
 REENTRY_THRESHOLD = 1.01
 price_window = deque(maxlen=720)
 
 def get_price():
-    data = client.get_tickers(category="spot", symbol=symbol)
-    return float(data["result"]["list"][0]["lastPrice"])
+    try:
+        data = client.get_tickers(category="spot", symbol=symbol)
+        return float(data["result"]["list"][0]["lastPrice"])
+    except Exception as e:
+        print(f"[ОШИБКА] Не удалось получить цену: {e}")
+        return 0
 
 def get_balance():
-    wallet = client.get_wallet_balance(accountType="UNIFIED")
-    coins = wallet["result"]["list"][0]["coin"]
-    for coin in coins:
-        if coin["coin"] == "USDT":
-            return float(coin["availableToTrade"])
-    return 0
+    try:
+        wallet = client.get_wallet_balance(accountType="UNIFIED")
+        coins = wallet["result"]["list"][0]["coin"]
+        for coin in coins:
+            if coin["coin"] == "USDT":
+                return float(coin["availableToTrade"])
+        return 0
+    except Exception as e:
+        print(f"[ОШИБКА] Не удалось получить баланс: {e}")
+        return 0
 
 def buy_all():
-    usdt = get_balance()
-    price = get_price()
-    qty = round(usdt / price, 6)
-    client.place_order(
-        category="spot",
-        symbol=symbol,
-        side="Buy",
-        orderType="Market",
-        qty=qty
-    )
-    print(f"[ПОКУПКА] Куплено {qty} {symbol}")
-    return qty
+    try:
+        usdt = get_balance()
+        price = get_price()
+
+        if usdt < 5:
+            print(f"[ОШИБКА] Недостаточно средств: {usdt} USDT")
+            return 0
+
+        if price <= 0:
+            print(f"[ОШИБКА] Неверная цена: {price}")
+            return 0
+
+        qty = round(usdt / price, 6)
+
+        if qty <= 0:
+            print(f"[ОШИБКА] Неверное количество для покупки: qty = {qty}")
+            return 0
+
+        client.place_order(
+            category="spot",
+            symbol=symbol,
+            side="Buy",
+            orderType="Market",
+            qty=qty
+        )
+        print(f"[ПОКУПКА] Куплено {qty} {symbol}")
+        return qty
+    except Exception as e:
+        print(f"[ОШИБКА] Ошибка при покупке: {e}")
+        return 0
 
 def sell_all(qty):
-    client.place_order(
-        category="spot",
-        symbol=symbol,
-        side="Sell",
-        orderType="Market",
-        qty=qty
-    )
-    print(f"[ПРОДАЖА] Продано {qty} {symbol}")
+    try:
+        client.place_order(
+            category="spot",
+            symbol=symbol,
+            side="Sell",
+            orderType="Market",
+            qty=qty
+        )
+        print(f"[ПРОДАЖА] Продано {qty} {symbol}")
+    except Exception as e:
+        print(f"[ОШИБКА] Ошибка при продаже: {e}")
 
 def wait_for_5_percent_pump():
     print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
     while True:
         current = get_price()
+        if current <= 0:
+            print("[ОШИБКА] Пропуск из-за некорректной цены")
+            time.sleep(60)
+            continue
         price_window.append(current)
         local_min = min(price_window)
         print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
@@ -97,6 +130,10 @@ def run_bot():
             if price >= last_peak * REENTRY_THRESHOLD:
                 print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +1%: {price} (пик был {last_peak})")
                 qty = buy_all()
+                if qty == 0:
+                    print("[ПРОПУСК] Покупка не удалась. Ждём 10 минут...")
+                    time.sleep(600)
+                    continue
                 track_trade(price, qty)
                 print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
                 time.sleep(600)
@@ -104,6 +141,10 @@ def run_bot():
         print("\n[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
+        if qty == 0:
+            print("[ПРОПУСК] Покупка не удалась. Ждём 10 минут...")
+            time.sleep(600)
+            continue
         track_trade(entry_price, qty)
         print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
