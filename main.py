@@ -4,7 +4,7 @@ from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
-# Загрузка API ключей из .env
+# Загрузка API ключей
 load_dotenv()
 api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
@@ -12,7 +12,7 @@ api_secret = os.getenv("API_SECRET")
 symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# Храним последние 720 цен (12 часов по 1 минуте)
+# Храним последние 720 цен (12 часов, если 1 цена в минуту)
 price_window = deque(maxlen=720)
 
 # Получаем текущую цену
@@ -22,17 +22,11 @@ def get_price():
 
 # Получаем доступный баланс USDT
 def get_balance():
-    try:
-        response = client.get_wallet_balance(accountType="UNIFIED")
-        coins = response["result"]["list"][0]["coin"]
-        for c in coins:
-            if c["coin"] == "USDT":
-                available = float(c["availableToTrade"])
-                print(f"[ПРОВЕРКА БАЛАНСА] Найдено USDT: {available}")
-                return available
-        print("[ПРОВЕРКА БАЛАНСА] USDT не найден среди монет.")
-    except Exception as e:
-        print(f"[ОШИБКА ПРИ ЗАПРОСЕ БАЛАНСА] {e}")
+    wallet = client.get_wallet_balance(accountType="UNIFIED")
+    coins = wallet["result"]["list"][0]["coin"]
+    for coin in coins:
+        if coin["coin"] == "USDT":
+            return float(coin.get("walletBalance", 0))  # исправлено!
     return 0
 
 # Покупка на 90% баланса
@@ -82,20 +76,20 @@ def preload_prices():
     print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
     print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
 
-# Ожидание сигнала +5.2% от минимума
-def wait_for_5_percent_pump():
-    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5.2% роста от локального минимума...")
+# Ждём +4.5% роста от минимума
+def wait_for_4_5_percent_pump():
+    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +4.5% роста от локального минимума...")
     while True:
         current = get_price()
         price_window.append(current)
         local_min = min(price_window)
         print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
-        if current >= local_min * 1.052:
-            print(f"[ВХОД] Цена выросла на +5.2% от минимума: {local_min} → {current}")
+        if current >= local_min * 1.045:
+            print(f"[ВХОД] Цена выросла на +4.5% от минимума: {local_min} → {current}")
             return current
         time.sleep(60)
 
-# Отслеживание позиции и выход при -2.8% от пика
+# Сопровождение позиции до -2.8% от пика
 def track_trade(entry_price, qty):
     peak = entry_price
     below_threshold_counter = 0
@@ -120,13 +114,13 @@ def track_trade(entry_price, qty):
 def run_bot():
     preload_prices()
     while True:
-        print("[ПОИСК] Включен режим отслеживания +5.2% от локального минимума (12ч)...")
-        entry_price = wait_for_5_percent_pump()
+        print("[ПОИСК] Включен режим отслеживания +4.5% от локального минимума (12ч)...")
+        entry_price = wait_for_4_5_percent_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
         print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
 
-# Запуск
+# Старт
 if __name__ == "__main__":
     run_bot()
