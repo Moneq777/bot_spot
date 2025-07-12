@@ -4,7 +4,7 @@ from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
-# Загрузка API ключей
+# Загрузка API ключей из .env
 load_dotenv()
 api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
@@ -12,20 +12,27 @@ api_secret = os.getenv("API_SECRET")
 symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
+# Храним последние 720 цен (12 часов по 1 минуте)
 price_window = deque(maxlen=720)
 
-# Получение актуальной цены
+# Получаем текущую цену
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
     return float(data["result"]["list"][0]["lastPrice"])
 
-# Получение баланса USDT из Unified Trading Account
+# Получаем доступный баланс USDT
 def get_balance():
-    wallet = client.get_wallet_balance(accountType="UNIFIED")
-    for coin in wallet["result"]["list"][0]["coin"]:
-        if coin["coin"] == "USDT":
-            balance = float(coin.get("availableToTrade", 0))
-            return balance
+    try:
+        response = client.get_wallet_balance(accountType="UNIFIED")
+        coins = response["result"]["list"][0]["coin"]
+        for c in coins:
+            if c["coin"] == "USDT":
+                available = float(c["availableToTrade"])
+                print(f"[ПРОВЕРКА БАЛАНСА] Найдено USDT: {available}")
+                return available
+        print("[ПРОВЕРКА БАЛАНСА] USDT не найден среди монет.")
+    except Exception as e:
+        print(f"[ОШИБКА ПРИ ЗАПРОСЕ БАЛАНСА] {e}")
     return 0
 
 # Покупка на 90% баланса
@@ -38,10 +45,10 @@ def buy_all():
     price = get_price()
     qty = (usdt * 0.90) / price
     qty = float(f"{qty:.3f}")
+    print(f"[РАСЧЁТ] Покупаем {qty} {symbol} по цене {price}")
     if qty <= 0:
         print("[ОШИБКА] Рассчитано 0 монет для покупки — пропуск.")
         return 0
-    print(f"[ПОКУПКА] Покупаем {qty} {symbol} по {price}")
     client.place_order(
         category="spot",
         symbol=symbol,
@@ -49,6 +56,7 @@ def buy_all():
         orderType="Market",
         qty=qty
     )
+    print(f"[ПОКУПКА] Куплено {qty} {symbol}")
     return qty
 
 # Продажа всей позиции
@@ -65,12 +73,13 @@ def sell_all(qty):
     )
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
-# Загрузка истории
+# Подгружаем цены за последние 12 часов
 def preload_prices():
     print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
     candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
     closes = [float(c[4]) for c in candles["result"]["list"]]
     price_window.extend(closes)
+    print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
     print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
 
 # Ожидание сигнала +5.2% от минимума
@@ -86,7 +95,7 @@ def wait_for_5_percent_pump():
             return current
         time.sleep(60)
 
-# Сопровождение до -2.8% от пика
+# Отслеживание позиции и выход при -2.8% от пика
 def track_trade(entry_price, qty):
     peak = entry_price
     below_threshold_counter = 0
@@ -107,7 +116,7 @@ def track_trade(entry_price, qty):
             below_threshold_counter = 0
         time.sleep(60)
 
-# Запуск бота
+# Основной цикл
 def run_bot():
     preload_prices()
     while True:
@@ -118,5 +127,6 @@ def run_bot():
         print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
 
+# Запуск
 if __name__ == "__main__":
     run_bot()
