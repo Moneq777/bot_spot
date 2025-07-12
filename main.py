@@ -26,16 +26,20 @@ def get_balance():
     coins = wallet["result"]["list"][0]["coin"]
     for coin in coins:
         if coin["coin"] == "USDT":
-            available = coin.get("availableToTrade") or coin.get("availableBalance")
-            if available is not None:
-                return float(available)
+            return float(coin.get("availableToTrade", 0))
     return 0
 
-# Покупка на 99% баланса
+# Покупка на 90% баланса
 def buy_all():
     usdt = get_balance()
+    print(f"[БАЛАНС] Доступно USDT: {usdt}")
+    if usdt <= 0:
+        print("[ОШИБКА] Баланс USDT не найден или недоступен.")
+        return 0
     price = get_price()
-    qty = round((usdt * 0.99) / price, 6)
+    qty = (usdt * 0.90) / price
+    qty = float(f"{qty:.3f}")
+    print(f"[РАСЧЁТ] Покупаем {qty} {symbol} по цене {price}")
     if qty <= 0:
         print("[ОШИБКА] Рассчитано 0 монет для покупки — пропуск.")
         return 0
@@ -66,20 +70,15 @@ def sell_all(qty):
 # Подгружаем цены за последние 12 часов
 def preload_prices():
     print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
-    candles = client.get_kline(
-        category="spot",
-        symbol=symbol,
-        interval="1",
-        limit=720
-    )
+    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
     closes = [float(c[4]) for c in candles["result"]["list"]]
     price_window.extend(closes)
     print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
     print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
 
-# Ожидание роста на +5.2% от локального минимума
+# Ждём +5.2% роста от минимума
 def wait_for_5_percent_pump():
-    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
+    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5.2% роста от локального минимума...")
     while True:
         current = get_price()
         price_window.append(current)
@@ -90,7 +89,7 @@ def wait_for_5_percent_pump():
             return current
         time.sleep(60)
 
-# Сопровождение позиции до выхода при -2.8% от пика
+# Сопровождение позиции до -2.8% от пика
 def track_trade(entry_price, qty):
     peak = entry_price
     below_threshold_counter = 0
@@ -111,11 +110,11 @@ def track_trade(entry_price, qty):
             below_threshold_counter = 0
         time.sleep(60)
 
-# Основной цикл работы бота
+# Основной цикл
 def run_bot():
     preload_prices()
     while True:
-        print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12ч)...")
+        print("[ПОИСК] Включен режим отслеживания +5.2% от локального минимума (12ч)...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
