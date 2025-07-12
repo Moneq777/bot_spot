@@ -12,21 +12,20 @@ api_secret = os.getenv("API_SECRET")
 symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# Храним последние 720 цен (12 часов, если 1 цена в минуту)
 price_window = deque(maxlen=720)
 
-# Получаем текущую цену
+# Получение актуальной цены
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
     return float(data["result"]["list"][0]["lastPrice"])
 
-# Получаем доступный баланс USDT
+# Получение баланса USDT из Unified Trading Account
 def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
-    coins = wallet["result"]["list"][0]["coin"]
-    for coin in coins:
+    for coin in wallet["result"]["list"][0]["coin"]:
         if coin["coin"] == "USDT":
-            return float(coin.get("availableToTrade", 0))
+            balance = float(coin.get("availableToTrade", 0))
+            return balance
     return 0
 
 # Покупка на 90% баланса
@@ -39,10 +38,10 @@ def buy_all():
     price = get_price()
     qty = (usdt * 0.90) / price
     qty = float(f"{qty:.3f}")
-    print(f"[РАСЧЁТ] Покупаем {qty} {symbol} по цене {price}")
     if qty <= 0:
         print("[ОШИБКА] Рассчитано 0 монет для покупки — пропуск.")
         return 0
+    print(f"[ПОКУПКА] Покупаем {qty} {symbol} по {price}")
     client.place_order(
         category="spot",
         symbol=symbol,
@@ -50,7 +49,6 @@ def buy_all():
         orderType="Market",
         qty=qty
     )
-    print(f"[ПОКУПКА] Куплено {qty} {symbol}")
     return qty
 
 # Продажа всей позиции
@@ -67,16 +65,15 @@ def sell_all(qty):
     )
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
-# Подгружаем цены за последние 12 часов
+# Загрузка истории
 def preload_prices():
     print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
     candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
     closes = [float(c[4]) for c in candles["result"]["list"]]
     price_window.extend(closes)
-    print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
     print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
 
-# Ждём +5.2% роста от минимума
+# Ожидание сигнала +5.2% от минимума
 def wait_for_5_percent_pump():
     print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5.2% роста от локального минимума...")
     while True:
@@ -89,7 +86,7 @@ def wait_for_5_percent_pump():
             return current
         time.sleep(60)
 
-# Сопровождение позиции до -2.8% от пика
+# Сопровождение до -2.8% от пика
 def track_trade(entry_price, qty):
     peak = entry_price
     below_threshold_counter = 0
@@ -110,7 +107,7 @@ def track_trade(entry_price, qty):
             below_threshold_counter = 0
         time.sleep(60)
 
-# Основной цикл
+# Запуск бота
 def run_bot():
     preload_prices()
     while True:
@@ -121,6 +118,5 @@ def run_bot():
         print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
 
-# Старт
 if __name__ == "__main__":
     run_bot()
