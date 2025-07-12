@@ -1,5 +1,6 @@
 import os
 import time
+import json
 from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
@@ -11,11 +12,31 @@ api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
+STATE_FILE = "state.json"
+price_window = deque(maxlen=720)
 last_peak = 0
 last_exit_time = 0
-REENTRY_COOLDOWN = 1800  # 30 минут
-REENTRY_THRESHOLD = 1.01
-price_window = deque(maxlen=720)
+
+def load_state():
+    global last_peak, last_exit_time, price_window
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            state = json.load(f)
+            last_peak = state.get("last_peak", 0)
+            last_exit_time = state.get("last_exit_time", 0)
+            price_window_data = state.get("price_window", [])
+            price_window = deque(price_window_data[-720:], maxlen=720)
+            print("[STATE] Состояние загружено.")
+
+def save_state():
+    state = {
+        "last_peak": last_peak,
+        "last_exit_time": last_exit_time,
+        "price_window": list(price_window)
+    }
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+    print("[STATE] Состояние сохранено.")
 
 def get_price():
     try:
@@ -50,7 +71,6 @@ def buy_all():
             print(f"[ОШИБКА] Неверная цена: {price}")
             return 0
 
-        # Добавлен 1% буфер на случай резкого изменения цены
         qty = round((usdt * 0.99) / price, 6)
 
         if qty <= 0:
@@ -66,7 +86,6 @@ def buy_all():
         )
         print(f"[ПОКУПКА] Куплено {qty} {symbol}")
         return qty
-
     except Exception as e:
         print(f"[ОШИБКА] Ошибка при покупке: {e}")
         return 0
@@ -118,6 +137,7 @@ def track_trade(entry_price, qty):
                 price_window.clear()
                 last_peak = peak
                 last_exit_time = time.time()
+                save_state()
                 return
         else:
             below_threshold_counter = 0
@@ -125,11 +145,12 @@ def track_trade(entry_price, qty):
 
 def run_bot():
     global last_peak, last_exit_time
+    load_state()
     while True:
         now = time.time()
         price = get_price()
-        if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
-            if price >= last_peak * REENTRY_THRESHOLD:
+        if last_peak and now - last_exit_time >= 1800:
+            if price >= last_peak * 1.01:
                 print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +1%: {price} (пик был {last_peak})")
                 qty = buy_all()
                 if qty == 0:
