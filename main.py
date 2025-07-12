@@ -50,7 +50,8 @@ def buy_all():
             print(f"[ОШИБКА] Неверная цена: {price}")
             return 0
 
-        qty = round(usdt / price, 6)
+        # Добавлен 1% буфер на случай резкого изменения цены
+        qty = round((usdt * 0.99) / price, 6)
 
         if qty <= 0:
             print(f"[ОШИБКА] Неверное количество для покупки: qty = {qty}")
@@ -65,6 +66,7 @@ def buy_all():
         )
         print(f"[ПОКУПКА] Куплено {qty} {symbol}")
         return qty
+
     except Exception as e:
         print(f"[ОШИБКА] Ошибка при покупке: {e}")
         return 0
