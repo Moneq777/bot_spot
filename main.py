@@ -4,23 +4,23 @@ from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
+# Загрузка API ключей
 load_dotenv()
-
-symbol = "WIFUSDT"
 api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
+
+symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-last_peak = 0
-last_exit_time = 0
-REENTRY_COOLDOWN = 1800
-REENTRY_THRESHOLD = 1.01
+# Храним последние 720 цен (12 часов, если 1 цена в минуту)
 price_window = deque(maxlen=720)
 
+# Получаем текущую цену
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
     return float(data["result"]["list"][0]["lastPrice"])
 
+# Получаем доступный баланс USDT
 def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     coins = wallet["result"]["list"][0]["coin"]
@@ -29,10 +29,11 @@ def get_balance():
             return float(coin["availableToTrade"])
     return 0
 
+# Покупка на 99% баланса
 def buy_all():
     usdt = get_balance()
     price = get_price()
-    qty = round(usdt / price, 6)
+    qty = round((usdt * 0.99) / price, 6)
     if qty <= 0:
         print("[ОШИБКА] Рассчитано 0 монет для покупки — пропуск.")
         return 0
@@ -46,6 +47,7 @@ def buy_all():
     print(f"[ПОКУПКА] Куплено {qty} {symbol}")
     return qty
 
+# Продажа всей позиции
 def sell_all(qty):
     if qty <= 0:
         print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
@@ -59,6 +61,7 @@ def sell_all(qty):
     )
     print(f"[ПРОДАЖА] Продано {qty} {symbol}")
 
+# Подгружаем цены за последние 12 часов
 def preload_prices():
     print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
     candles = client.get_kline(
@@ -70,8 +73,9 @@ def preload_prices():
     closes = [float(c[4]) for c in candles["result"]["list"]]
     price_window.extend(closes)
     print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
-    print(f"[СТАТИСТИКА] Минимум за 12ч: {min(closes)}, максимум: {max(closes)}")
+    print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
 
+# Ожидание роста на +5.2% от локального минимума
 def wait_for_5_percent_pump():
     print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5% роста от локального минимума...")
     while True:
@@ -84,8 +88,8 @@ def wait_for_5_percent_pump():
             return current
         time.sleep(60)
 
+# Сопровождение позиции до выхода при -2.8% от пика
 def track_trade(entry_price, qty):
-    global last_peak, last_exit_time
     peak = entry_price
     below_threshold_counter = 0
     while True:
@@ -97,36 +101,25 @@ def track_trade(entry_price, qty):
             below_threshold_counter += 1
             print(f"[НИЖЕ -2.8%] {below_threshold_counter} мин: {price} от пика {peak}")
             if below_threshold_counter >= 3:
-                print(f"[ВЫХОД] Удержание -2.8% от пика: {peak} → {price}")
+                print(f"[ВЫХОД] Падение на -2.8% от пика: {peak} → {price}")
                 sell_all(qty)
                 price_window.clear()
-                last_peak = peak
-                last_exit_time = time.time()
                 return
         else:
             below_threshold_counter = 0
         time.sleep(60)
 
+# Основной цикл работы бота
 def run_bot():
-    global last_peak, last_exit_time
     preload_prices()
     while True:
-        now = time.time()
-        price = get_price()
-        if last_peak and now - last_exit_time >= REENTRY_COOLDOWN:
-            if price >= last_peak * REENTRY_THRESHOLD:
-                print(f"[ПОВТОРНЫЙ ВХОД] Цена пробила пик +1%: {price} (пик был {last_peak})")
-                qty = buy_all()
-                track_trade(price, qty)
-                print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
-                time.sleep(600)
-                continue
-        print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12 часов)...")
+        print("[ПОИСК] Включен режим отслеживания +5% от локального минимума (12ч)...")
         entry_price = wait_for_5_percent_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
         print("[ОЖИДАНИЕ] Пауза 10 минут перед следующим циклом...")
         time.sleep(600)
 
+# Старт
 if __name__ == "__main__":
     run_bot()
