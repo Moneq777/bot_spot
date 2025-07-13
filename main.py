@@ -40,32 +40,37 @@ def buy_all():
     qty = (usdt * 0.90) / price
     qty = float(f"{qty:.3f}")
     print(f"[РАСЧЁТ] Покупаем {qty} {symbol} по цене {price}")
-    if qty <= 0:
-        print("[ОШИБКА] Рассчитано 0 монет для покупки — пропуск.")
+    try:
+        client.place_order(
+            category="spot",
+            symbol=symbol,
+            side="Buy",
+            orderType="Market",
+            qty=qty
+        )
+        print(f"[ПОКУПКА] Куплено {qty} {symbol}")
+        return qty
+    except Exception as e:
+        print(f"[ОШИБКА] Не удалось купить: {e}")
         return 0
-    client.place_order(
-        category="spot",
-        symbol=symbol,
-        side="Buy",
-        orderType="Market",
-        qty=qty
-    )
-    print(f"[ПОКУПКА] Куплено {qty} {symbol}")
-    return qty
 
 # Продажа всей позиции
 def sell_all(qty):
     if qty <= 0:
         print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
         return
-    client.place_order(
-        category="spot",
-        symbol=symbol,
-        side="Sell",
-        orderType="Market",
-        qty=qty
-    )
-    print(f"[ПРОДАЖА] Продано {qty} {symbol}")
+    qty = float(f"{qty:.2f}")
+    try:
+        client.place_order(
+            category="spot",
+            symbol=symbol,
+            side="Sell",
+            orderType="Market",
+            qty=qty
+        )
+        print(f"[ПРОДАЖА] Продано {qty} {symbol}")
+    except Exception as e:
+        print(f"[ОШИБКА] Не удалось продать: {e}")
 
 # Подгружаем цены за последние 12 часов
 def preload_prices():
@@ -108,9 +113,9 @@ def track_trade(entry_price, qty):
             if below_threshold_counter >= 3:
                 print(f"[ВЫХОД] Падение на -0.25% от пика: {peak} → {price}")
                 sell_all(qty)
-                price_window.clear()  # Сбросить окно цен после выхода
-                print("[ОЖИДАНИЕ] Пауза 10 минут после продажи...")
-                time.sleep(600)
+                price_window.clear()
+                print("[ОЖИДАНИЕ] Пауза 3 минуты после продажи...")
+                time.sleep(180)  # пауза 3 минуты
                 return
         else:
             below_threshold_counter = 0
