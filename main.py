@@ -4,7 +4,6 @@ from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
-# Загрузка API ключей
 load_dotenv()
 api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
@@ -12,15 +11,12 @@ api_secret = os.getenv("API_SECRET")
 symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# Храним последние 720 цен (12 часов, если 1 цена в минуту)
 price_window = deque(maxlen=720)
 
-# Получаем текущую цену
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
     return float(data["result"]["list"][0]["lastPrice"])
 
-# Получаем доступный баланс USDT
 def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     coins = wallet["result"]["list"][0]["coin"]
@@ -29,7 +25,6 @@ def get_balance():
             return float(coin.get("walletBalance", 0))
     return 0
 
-# Покупка на 90% баланса
 def buy_all():
     usdt = get_balance()
     print(f"[БАЛАНС] Доступно USDT: {usdt}")
@@ -54,7 +49,6 @@ def buy_all():
         print(f"[ОШИБКА] Не удалось купить: {e}")
         return 0
 
-# Продажа всей позиции
 def sell_all(qty):
     if qty <= 0:
         print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
@@ -72,7 +66,6 @@ def sell_all(qty):
     except Exception as e:
         print(f"[ОШИБКА] Не удалось продать: {e}")
 
-# Подгружаем цены за последние 12 часов
 def preload_prices():
     print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
     candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
@@ -81,9 +74,8 @@ def preload_prices():
     print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
     print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
 
-# Ждём +0.25% роста от минимума
 def wait_for_pump():
-    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +0.25% роста от локального минимума...")
+    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5.2% роста от локального минимума...")
     while True:
         current = get_price()
         price_window.append(current)
@@ -93,12 +85,11 @@ def wait_for_pump():
             continue
         local_min = min(price_window)
         print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
-        if current >= local_min * 1.0025:
-            print(f"[ВХОД] Цена выросла на +0.25% от минимума: {local_min} → {current}")
+        if current >= local_min * 1.052:
+            print(f"[ВХОД] Цена выросла на +5.2% от минимума: {local_min} → {current}")
             return current
         time.sleep(60)
 
-# Сопровождение позиции до -0.25% от пика (3 минуты подряд)
 def track_trade(entry_price, qty):
     peak = entry_price
     below_threshold_counter = 0
@@ -107,29 +98,27 @@ def track_trade(entry_price, qty):
         if price > peak:
             peak = price
             below_threshold_counter = 0
-        elif price <= peak * 0.9975:
+        elif price <= peak * 0.972:
             below_threshold_counter += 1
-            print(f"[НИЖЕ -0.25%] {below_threshold_counter} мин: {price} от пика {peak}")
+            print(f"[НИЖЕ -2.8%] {below_threshold_counter} мин: {price} от пика {peak}")
             if below_threshold_counter >= 3:
-                print(f"[ВЫХОД] Падение на -0.25% от пика: {peak} → {price}")
+                print(f"[ВЫХОД] Падение на -2.8% от пика: {peak} → {price}")
                 sell_all(qty)
                 price_window.clear()
                 print("[ОЖИДАНИЕ] Пауза 3 минуты после продажи...")
-                time.sleep(180)  # пауза 3 минуты
+                time.sleep(180)
                 return
         else:
             below_threshold_counter = 0
         time.sleep(60)
 
-# Основной цикл
 def run_bot():
     preload_prices()
     while True:
-        print("[ПОИСК] Включен режим отслеживания +0.25% от локального минимума...")
+        print("[ПОИСК] Включен режим отслеживания +5.2% от локального минимума...")
         entry_price = wait_for_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
 
-# Старт
 if __name__ == "__main__":
     run_bot()
