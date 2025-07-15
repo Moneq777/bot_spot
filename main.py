@@ -14,10 +14,12 @@ client = HTTP(api_key=api_key, api_secret=api_secret)
 
 price_window = deque(maxlen=720)
 
+# Получаем текущую цену
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
     return float(data["result"]["list"][0]["lastPrice"])
 
+# Получаем доступный баланс USDT
 def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     coins = wallet["result"]["list"][0]["coin"]
@@ -26,6 +28,7 @@ def get_balance():
             return float(coin.get("walletBalance", 0))
     return 0
 
+# Получаем баланс монеты
 def get_token_balance(token="WIF"):
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     coins = wallet["result"]["list"][0]["coin"]
@@ -34,112 +37,108 @@ def get_token_balance(token="WIF"):
             return float(coin.get("walletBalance", 0))
     return 0
 
-def get_recent_volumes(limit=20):
-    data = client.get_kline(category="spot", symbol=symbol, interval="1", limit=limit)
-    candles = data["result"]["list"]
-    volumes = [float(c[5]) for c in candles]
-    opens = [float(c[1]) for c in candles]
-    closes = [float(c[4]) for c in candles]
-    return volumes, opens, closes
+# Получаем последние N цен закрытия
+def get_recent_closes(n=200):
+    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=n)
+    closes = [float(c[4]) for c in candles["result"]["list"]]
+    return closes
 
-def is_volume_high():
-    volumes, opens, closes = get_recent_volumes()
-    avg_volume = sum(volumes[:-1]) / (len(volumes) - 1)
-    last_volume = volumes[-1]
-    green_candle = closes[-1] > opens[-1]
-    print(f"[ОБЪЁМ] Последний: {last_volume}, Средний: {avg_volume}, Зелёная свеча: {green_candle}")
-    return last_volume > avg_volume and green_candle
-
+# Покупка на 95% баланса
 def buy_all():
     usdt = get_balance()
     print(f"[БАЛАНС] Доступно USDT: {usdt}")
     if usdt <= 0:
-        print("[ОШИБКА] Баланс USDT не найден или недоступен.")
+        print("[ОШИБКА] Недостаточно средств.")
         return 0
     price = get_price()
     qty = (usdt * 0.95) / price
     qty = float(f"{qty:.3f}")
-    print(f"[РАСЧЁТ] Покупаем {qty} {symbol} по цене {price}")
+    print(f"[ПОКУПКА] Покупаем {qty} {symbol}")
     try:
-        client.place_order(
-            category="spot",
-            symbol=symbol,
-            side="Buy",
-            orderType="Market",
-            qty=qty
-        )
-        print(f"[ПОКУПКА] Куплено {qty} {symbol}")
+        client.place_order(category="spot", symbol=symbol, side="Buy", orderType="Market", qty=qty)
         return qty
     except Exception as e:
-        print(f"[ОШИБКА] Не удалось купить: {e}")
+        print(f"[ОШИБКА ПОКУПКИ] {e}")
         return 0
 
-def sell_all(qty):
-    if qty <= 0:
-        print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
-        return
+# Продажа всей позиции — на 1% меньше баланса
+def sell_all(entry_qty):
     actual_qty = get_token_balance("WIF")
-    sell_qty = min(actual_qty, qty * 0.99)  # на 1% меньше
-    sell_qty = float(f"{sell_qty:.2f}")
+    sell_qty = min(actual_qty, entry_qty) * 0.99
+    sell_qty = float(f"{sell_qty:.3f}")
     try:
-        client.place_order(
-            category="spot",
-            symbol=symbol,
-            side="Sell",
-            orderType="Market",
-            qty=sell_qty
-        )
+        client.place_order(category="spot", symbol=symbol, side="Sell", orderType="Market", qty=sell_qty)
         print(f"[ПРОДАЖА] Продано {sell_qty} {symbol}")
     except Exception as e:
-        print(f"[ОШИБКА] Не удалось продать: {e}")
+        print(f"[ОШИБКА ПРОДАЖИ] {e}")
 
+# Проверка тренда: SMA50 > SMA200
+def is_uptrend():
+    closes = get_recent_closes(200)
+    sma50 = sum(closes[-50:]) / 50
+    sma200 = sum(closes) / 200
+    print(f"[ТРЕНД] SMA50: {sma50:.4f}, SMA200: {sma200:.4f}")
+    return sma50 > sma200
+
+# Проверка волатильности через ATR
+def is_volatility_sufficient():
+    closes = get_recent_closes(15)
+    atr = sum([abs(closes[i] - closes[i - 1]) for i in range(1, len(closes))]) / (len(closes) - 1)
+    print(f"[ВОЛАТИЛЬНОСТЬ] ATR: {atr:.4f}")
+    return atr >= 0.005
+
+# Ожидание сигнала на вход
 def wait_for_pump():
-    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +3.2% роста от локального минимума и фильтр по объёму...")
+    print("[ОЖИДАНИЕ] Ждём +3.2% роста от минимума...")
     while True:
         current = get_price()
         price_window.append(current)
         if len(price_window) < 10:
-            print("[ОЖИДАНИЕ] Недостаточно данных для анализа — ждём...")
+            print("[ОЖИДАНИЕ] Недостаточно данных...")
             time.sleep(60)
             continue
+
         local_min = min(price_window)
-        if current >= local_min * 1.032:
-            if is_volume_high():
-                print(f"[ВХОД] Цена выросла на +3.2% от минимума: {local_min} → {current}")
-                return current
-            else:
-                print("[ФИЛЬТР] Объём не прошёл проверку.")
+        threshold = local_min * 1.032
+        print(f"[ЦЕНА] Текущая: {current:.4f}, Минимум: {local_min:.4f}, Цель: {threshold:.4f}")
+
+        if current >= threshold and is_uptrend() and is_volatility_sufficient():
+            print("[СИГНАЛ] Условия выполнены — входим.")
+            return current
+
         time.sleep(60)
 
+# Сопровождение позиции
 def track_trade(entry_price, qty):
     peak = entry_price
-    below_threshold_counter = 0
+    below_counter = 0
     while True:
         price = get_price()
         if price > peak:
             peak = price
-            below_threshold_counter = 0
+            below_counter = 0
         elif price <= peak * 0.972:
-            below_threshold_counter += 1
-            print(f"[НИЖЕ -2.8%] {below_threshold_counter} мин: {price} от пика {peak}")
-            if below_threshold_counter >= 3:
-                print(f"[ВЫХОД] Падение на -2.8% от пика: {peak} → {price}")
+            below_counter += 1
+            print(f"[СТОП] Цена ниже пика -2.8% {below_counter}/3: {price:.4f}")
+            if below_counter >= 3:
+                print(f"[ВЫХОД] Продажа при откате от {peak:.4f} до {price:.4f}")
                 sell_all(qty)
                 price_window.clear()
-                print("[ОЖИДАНИЕ] Пауза 3 минуты после продажи...")
+                print("[ПАУЗА] 3 минуты...")
                 time.sleep(180)
                 return
         else:
-            below_threshold_counter = 0
+            below_counter = 0
         time.sleep(60)
 
+# Основной цикл
 def run_bot():
-    print("[СТАРТ] Бот запущен без предзагрузки истории.")
     while True:
-        print("[ПОИСК] Включен режим отслеживания +3.2% от локального минимума...")
+        print("[ПОИСК] Активен режим поиска...")
         entry_price = wait_for_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
 
+# Запуск
 if __name__ == "__main__":
     run_bot()
