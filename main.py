@@ -63,14 +63,14 @@ def buy_all():
         print(f"[ОШИБКА] Не удалось купить: {e}")
         return 0
 
-# Продажа всей позиции
-def sell_all(qty):
-    if qty <= 0:
-        print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
-        return
+# Продажа всей позиции с запасом -1%
+def sell_all(_=0):
     actual_qty = get_token_balance("WIF")
-    sell_qty = min(actual_qty, qty)
+    sell_qty = actual_qty * 0.99  # продаем на 1% меньше
     sell_qty = float(f"{sell_qty:.2f}")
+    if sell_qty <= 0:
+        print("[ОШИБКА] Недостаточно баланса для продажи.")
+        return
     try:
         client.place_order(
             category="spot",
@@ -123,10 +123,10 @@ def track_trade(entry_price, qty):
             print(f"[НИЖЕ -2.8%] {below_threshold_counter} мин: {price} от пика {peak}")
             if below_threshold_counter >= 3:
                 print(f"[ВЫХОД] Падение на -2.8% от пика: {peak} → {price}")
-                sell_all(qty)
+                sell_all()
                 price_window.clear()
                 print("[ОЖИДАНИЕ] Пауза 3 минуты после продажи...")
-                time.sleep(180)  # пауза 3 минуты
+                time.sleep(180)
                 return
         else:
             below_threshold_counter = 0
