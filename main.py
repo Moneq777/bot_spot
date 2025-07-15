@@ -13,6 +13,7 @@ symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
 price_window = deque(maxlen=720)
+VOLUME_MULTIPLIER = 1.5  # Коэффициент всплеска объёма
 
 # Получаем текущую цену
 def get_price():
@@ -42,6 +43,15 @@ def get_recent_closes(n=200):
     candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=n)
     closes = [float(c[4]) for c in candles["result"]["list"]]
     return closes
+
+# Проверка всплеска объёма: текущий > среднего за N свечей
+def is_volume_strong(n=10):
+    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=n + 1)
+    volumes = [float(c[5]) for c in candles["result"]["list"]]
+    avg_volume = sum(volumes[:-1]) / n
+    current_volume = volumes[-1]
+    print(f"[ОБЪЁМ] Текущий: {current_volume:.2f}, Средний: {avg_volume:.2f}")
+    return current_volume > avg_volume * VOLUME_MULTIPLIER
 
 # Покупка на 95% баланса
 def buy_all():
@@ -102,7 +112,7 @@ def wait_for_pump():
         threshold = local_min * 1.032
         print(f"[ЦЕНА] Текущая: {current:.4f}, Минимум: {local_min:.4f}, Цель: {threshold:.4f}")
 
-        if current >= threshold and is_uptrend() and is_volatility_sufficient():
+        if current >= threshold and is_uptrend() and is_volatility_sufficient() and is_volume_strong():
             print("[СИГНАЛ] Условия выполнены — входим.")
             return current
 
