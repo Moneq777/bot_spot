@@ -12,15 +12,12 @@ api_secret = os.getenv("API_SECRET")
 symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
 
-# Храним последние 720 цен (12 часов, если 1 цена в минуту)
 price_window = deque(maxlen=720)
 
-# Получаем текущую цену
 def get_price():
     data = client.get_tickers(category="spot", symbol=symbol)
     return float(data["result"]["list"][0]["lastPrice"])
 
-# Получаем доступный баланс USDT
 def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     coins = wallet["result"]["list"][0]["coin"]
@@ -29,7 +26,6 @@ def get_balance():
             return float(coin.get("walletBalance", 0))
     return 0
 
-# Получаем баланс WIF
 def get_token_balance(token="WIF"):
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     coins = wallet["result"]["list"][0]["coin"]
@@ -38,7 +34,22 @@ def get_token_balance(token="WIF"):
             return float(coin.get("walletBalance", 0))
     return 0
 
-# Покупка на 90% баланса
+def get_recent_volumes(limit=20):
+    data = client.get_kline(category="spot", symbol=symbol, interval="1", limit=limit)
+    candles = data["result"]["list"]
+    volumes = [float(c[5]) for c in candles]
+    opens = [float(c[1]) for c in candles]
+    closes = [float(c[4]) for c in candles]
+    return volumes, opens, closes
+
+def is_volume_high():
+    volumes, opens, closes = get_recent_volumes()
+    avg_volume = sum(volumes[:-1]) / (len(volumes) - 1)
+    last_volume = volumes[-1]
+    green_candle = closes[-1] > opens[-1]
+    print(f"[ОБЪЁМ] Последний: {last_volume}, Средний: {avg_volume}, Зелёная свеча: {green_candle}")
+    return last_volume > avg_volume and green_candle
+
 def buy_all():
     usdt = get_balance()
     print(f"[БАЛАНС] Доступно USDT: {usdt}")
@@ -46,7 +57,7 @@ def buy_all():
         print("[ОШИБКА] Баланс USDT не найден или недоступен.")
         return 0
     price = get_price()
-    qty = (usdt * 0.90) / price
+    qty = (usdt * 0.95) / price
     qty = float(f"{qty:.3f}")
     print(f"[РАСЧЁТ] Покупаем {qty} {symbol} по цене {price}")
     try:
@@ -63,14 +74,13 @@ def buy_all():
         print(f"[ОШИБКА] Не удалось купить: {e}")
         return 0
 
-# Продажа всей позиции с запасом -1%
-def sell_all(_=0):
-    actual_qty = get_token_balance("WIF")
-    sell_qty = actual_qty * 0.99  # продаем на 1% меньше
-    sell_qty = float(f"{sell_qty:.2f}")
-    if sell_qty <= 0:
-        print("[ОШИБКА] Недостаточно баланса для продажи.")
+def sell_all(qty):
+    if qty <= 0:
+        print("[ОШИБКА] Нулевая продажа — ничего не делаем.")
         return
+    actual_qty = get_token_balance("WIF")
+    sell_qty = min(actual_qty, qty * 0.99)  # на 1% меньше
+    sell_qty = float(f"{sell_qty:.2f}")
     try:
         client.place_order(
             category="spot",
@@ -83,18 +93,8 @@ def sell_all(_=0):
     except Exception as e:
         print(f"[ОШИБКА] Не удалось продать: {e}")
 
-# Подгружаем цены за последние 12 часов
-def preload_prices():
-    print("[ЗАГРУЗКА] Получаем исторические цены с Bybit...")
-    candles = client.get_kline(category="spot", symbol=symbol, interval="1", limit=720)
-    closes = [float(c[4]) for c in candles["result"]["list"]]
-    price_window.extend(closes)
-    print(f"[ЗАГРУЗКА] Загружено {len(closes)} цен за последние 12 часов.")
-    print(f"[СТАТИСТИКА] Минимум: {min(closes)}, максимум: {max(closes)}")
-
-# Ждём +5.2% роста от минимума
 def wait_for_pump():
-    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +5.2% роста от локального минимума...")
+    print("[ОЖИДАНИЕ СИГНАЛА] Ждём +3.2% роста от локального минимума и фильтр по объёму...")
     while True:
         current = get_price()
         price_window.append(current)
@@ -103,13 +103,14 @@ def wait_for_pump():
             time.sleep(60)
             continue
         local_min = min(price_window)
-        print(f"[МИНИМУМ] Текущее: {current}, Локальный минимум: {local_min}")
-        if current >= local_min * 1.052:
-            print(f"[ВХОД] Цена выросла на +5.2% от минимума: {local_min} → {current}")
-            return current
+        if current >= local_min * 1.032:
+            if is_volume_high():
+                print(f"[ВХОД] Цена выросла на +3.2% от минимума: {local_min} → {current}")
+                return current
+            else:
+                print("[ФИЛЬТР] Объём не прошёл проверку.")
         time.sleep(60)
 
-# Сопровождение позиции до -2.8% от пика (3 минуты подряд)
 def track_trade(entry_price, qty):
     peak = entry_price
     below_threshold_counter = 0
@@ -123,7 +124,7 @@ def track_trade(entry_price, qty):
             print(f"[НИЖЕ -2.8%] {below_threshold_counter} мин: {price} от пика {peak}")
             if below_threshold_counter >= 3:
                 print(f"[ВЫХОД] Падение на -2.8% от пика: {peak} → {price}")
-                sell_all()
+                sell_all(qty)
                 price_window.clear()
                 print("[ОЖИДАНИЕ] Пауза 3 минуты после продажи...")
                 time.sleep(180)
@@ -132,15 +133,13 @@ def track_trade(entry_price, qty):
             below_threshold_counter = 0
         time.sleep(60)
 
-# Основной цикл
 def run_bot():
-    preload_prices()
+    print("[СТАРТ] Бот запущен без предзагрузки истории.")
     while True:
-        print("[ПОИСК] Включен режим отслеживания +5.2% от локального минимума...")
+        print("[ПОИСК] Включен режим отслеживания +3.2% от локального минимума...")
         entry_price = wait_for_pump()
         qty = buy_all()
         track_trade(entry_price, qty)
 
-# Старт
 if __name__ == "__main__":
     run_bot()
