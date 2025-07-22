@@ -29,7 +29,7 @@ def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     for coin in wallet["result"]["list"][0]["coin"]:
         if coin["coin"] == "USDT":
-            return float(coin.get("availableBalance", 0))
+            return float(coin.get("availableBalance", coin.get("walletBalance", 0)))
     return 0
 
 def get_token_balance(token=TOKEN):
