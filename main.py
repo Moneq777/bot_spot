@@ -29,7 +29,7 @@ def get_balance():
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     for coin in wallet["result"]["list"][0]["coin"]:
         if coin["coin"] == "USDT":
-            return float(coin.get("walletBalance", 0))
+            return float(coin.get("availableBalance", 0))
     return 0
 
 def get_token_balance(token="WIF"):
@@ -63,7 +63,7 @@ def buy_all():
 def sell_all(entry_qty):
     actual_qty = get_token_balance("WIF")
     sell_qty = min(actual_qty, entry_qty) * 0.99
-    sell_qty = float(f"{sell_qty:.3f}")
+    sell_qty = float(f"{sell_qty:.2f}")  # ← исправлено округление до 2 знаков
     if sell_qty < 0.001:
         print("[СКИП] Слишком малая сумма для продажи")
         return 0
