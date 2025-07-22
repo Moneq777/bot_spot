@@ -8,20 +8,20 @@ from pybit.unified_trading import HTTP
 PERCENT_ENTRY = 2.5           # Вход при +2.5%
 TRAILING_STOP = 2.8           # Трейлинг-стоп -2.8%
 PRICE_WINDOW_MINUTES = 360    # 6 часов цен (360 минут)
+SYMBOL = "WIFUSDT"            # Торгуемая пара
+TOKEN = "WIF"                 # Название токена
 
 # === ЗАГРУЗКА API ===
 load_dotenv()
 api_key = os.getenv("API_KEY")
 api_secret = os.getenv("API_SECRET")
 
-symbol = "WIFUSDT"
 client = HTTP(api_key=api_key, api_secret=api_secret)
-
 price_window = deque(maxlen=PRICE_WINDOW_MINUTES)
 
 # === ПОЛУЧЕНИЕ ТЕКУЩЕЙ ЦЕНЫ ===
 def get_price():
-    data = client.get_tickers(category="spot", symbol=symbol)
+    data = client.get_tickers(category="spot", symbol=SYMBOL)
     return float(data["result"]["list"][0]["lastPrice"])
 
 # === ПОЛУЧЕНИЕ БАЛАНСА ===
@@ -32,7 +32,7 @@ def get_balance():
             return float(coin.get("availableBalance", 0))
     return 0
 
-def get_token_balance(token="WIF"):
+def get_token_balance(token=TOKEN):
     wallet = client.get_wallet_balance(accountType="UNIFIED")
     for coin in wallet["result"]["list"][0]["coin"]:
         if coin["coin"] == token:
@@ -42,35 +42,33 @@ def get_token_balance(token="WIF"):
 # === ПОКУПКА ===
 def buy_all():
     usdt = get_balance()
+    price = get_price()
+    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем купить: {(usdt * 0.95) / price:.4f} {TOKEN}")
     if usdt <= 0:
         print("[ОШИБКА] Недостаточно USDT для покупки")
         return 0, 0
-    price = get_price()
     qty = (usdt * 0.95) / price
     qty = float(f"{qty:.3f}")
-    if qty < 0.001:
-        print("[СКИП] Слишком малая сумма для покупки")
-        return 0, 0
     try:
-        client.place_order(category="spot", symbol=symbol, side="Buy", orderType="Market", qty=qty)
-        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {qty} {symbol}")
+        client.place_order(category="spot", symbol=SYMBOL, side="Buy", orderType="Market", qty=qty)
+        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {qty:.2f} {TOKEN} на {qty * price:.2f} USDT")
         return qty, price
     except Exception as e:
         print(f"[ОШИБКА ПОКУПКИ] {e}")
         return 0, 0
 
 # === ПРОДАЖА ===
-def sell_all(entry_qty):
-    actual_qty = get_token_balance("WIF")
-    sell_qty = min(actual_qty, entry_qty) * 0.99
-    sell_qty = float(f"{sell_qty:.2f}")  # ← исправлено округление до 2 знаков
+def sell_all():
+    actual_qty = get_token_balance(TOKEN)
+    sell_qty = actual_qty * 0.99
+    sell_qty = float(f"{sell_qty:.2f}")
     if sell_qty < 0.001:
         print("[СКИП] Слишком малая сумма для продажи")
         return 0
     try:
         price = get_price()
-        client.place_order(category="spot", symbol=symbol, side="Sell", orderType="Market", qty=sell_qty)
-        print(f"[ВЫХОД] Цена: {price:.4f}, Продано: {sell_qty} {symbol}")
+        client.place_order(category="spot", symbol=SYMBOL, side="Sell", orderType="Market", qty=sell_qty)
+        print(f"[ВЫХОД] Цена: {price:.4f}, Продано: {sell_qty:.2f} {TOKEN}")
         return price
     except Exception as e:
         print(f"[ОШИБКА ПРОДАЖИ] {e}")
@@ -109,7 +107,7 @@ def track_trade(entry_price, qty):
             below_counter += 1
             print(f"[СТОП] Цена ниже пика -{TRAILING_STOP}% {below_counter}/3: {price:.4f}")
             if below_counter >= 3:
-                exit_price = sell_all(qty)
+                exit_price = sell_all()
                 if exit_price:
                     pnl = (exit_price - entry_price) / entry_price * 100
                     print(f"[ПРИБЫЛЬ] Вход: {entry_price:.4f}, Выход: {exit_price:.4f}, Доход: {pnl:.2f}%")
