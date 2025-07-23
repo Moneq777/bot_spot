@@ -43,16 +43,25 @@ def get_token_balance(token=TOKEN):
 def buy_all():
     usdt = get_balance()
     price = get_price()
-    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем купить: {(usdt * 0.95) / price:.4f} {TOKEN}")
-    if usdt <= 0:
+    amount_usdt = round(usdt * 0.95, 2)
+    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем потратить: {amount_usdt:.2f} USDT")
+
+    if amount_usdt < 1:
         print("[ОШИБКА] Недостаточно USDT для покупки")
         return 0, 0
-    qty = (usdt * 0.95) / price
-    qty = float(f"{qty:.3f}")
+
     try:
-        client.place_order(category="spot", symbol=SYMBOL, side="Buy", orderType="Market", qty=qty)
-        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {qty:.2f} {TOKEN} на {qty * price:.2f} USDT")
-        return qty, price
+        client.place_order(
+            category="spot",
+            symbol=SYMBOL,
+            side="Buy",
+            orderType="Market",
+            quoteOrderQty=amount_usdt
+        )
+        time.sleep(2)  # Ждём исполнения
+        actual_qty = get_token_balance(TOKEN)
+        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {actual_qty:.2f} {TOKEN} на {amount_usdt:.2f} USDT")
+        return actual_qty, price
     except Exception as e:
         print(f"[ОШИБКА ПОКУПКИ] {e}")
         return 0, 0
