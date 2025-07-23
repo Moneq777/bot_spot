@@ -7,7 +7,7 @@ from pybit.unified_trading import HTTP
 # === НАСТРОЙКИ ===
 PERCENT_ENTRY = 2.5           # Вход при +2.5%
 TRAILING_STOP = 2.8           # Трейлинг-стоп -2.8%
-PRICE_WINDOW_MINUTES = 360    # 6 часов цен (360 минут)
+PRICE_WINDOW_MINUTES = 360    # 6 часов цен
 SYMBOL = "WIFUSDT"            # Торгуемая пара
 TOKEN = "WIF"                 # Название токена
 
@@ -43,11 +43,13 @@ def get_token_balance(token=TOKEN):
 def buy_all():
     usdt = get_balance()
     price = get_price()
-    amount_usdt = round(usdt * 0.95, 2)
-    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем потратить: {amount_usdt:.2f} USDT")
+    usdt_to_spend = usdt * 0.95
+    qty = round(usdt_to_spend / price, 3)
 
-    if amount_usdt < 1:
-        print("[ОШИБКА] Недостаточно USDT для покупки")
+    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем потратить: {usdt_to_spend:.2f} USDT")
+
+    if usdt <= 0 or qty < 0.001:
+        print("[ОШИБКА] Недостаточно средств для покупки")
         return 0, 0
 
     try:
@@ -56,27 +58,32 @@ def buy_all():
             symbol=SYMBOL,
             side="Buy",
             orderType="Market",
-            quoteOrderQty=amount_usdt
+            qty=qty
         )
-        time.sleep(2)  # Ждём исполнения
-        actual_qty = get_token_balance(TOKEN)
-        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {actual_qty:.2f} {TOKEN} на {amount_usdt:.2f} USDT")
-        return actual_qty, price
+        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {qty:.3f} {TOKEN} на {qty * price:.2f} USDT")
+        return qty, price
     except Exception as e:
         print(f"[ОШИБКА ПОКУПКИ] {e}")
         return 0, 0
 
 # === ПРОДАЖА ===
 def sell_all():
-    actual_qty = get_token_balance(TOKEN)
-    sell_qty = actual_qty * 0.99
-    sell_qty = float(f"{sell_qty:.2f}")
+    actual_qty = get_token_balance()
+    sell_qty = round(actual_qty * 0.99, 2)
+
     if sell_qty < 0.001:
         print("[СКИП] Слишком малая сумма для продажи")
         return 0
+
     try:
         price = get_price()
-        client.place_order(category="spot", symbol=SYMBOL, side="Sell", orderType="Market", qty=sell_qty)
+        client.place_order(
+            category="spot",
+            symbol=SYMBOL,
+            side="Sell",
+            orderType="Market",
+            qty=sell_qty
+        )
         print(f"[ВЫХОД] Цена: {price:.4f}, Продано: {sell_qty:.2f} {TOKEN}")
         return price
     except Exception as e:
