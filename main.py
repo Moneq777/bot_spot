@@ -60,7 +60,7 @@ def buy_all():
             orderType="Market",
             qty=qty
         )
-        print(f"[ВХОД] Цена: {price:.4f}, Куплено: {qty:.3f} {TOKEN} на {qty * price:.2f} USDT")
+        print(f"[ВХОД] Куплено {qty:.3f} {TOKEN} по цене {price:.4f} USDT (на сумму {qty * price:.2f} USDT)")
         return qty, price
     except Exception as e:
         print(f"[ОШИБКА ПОКУПКИ] {e}")
