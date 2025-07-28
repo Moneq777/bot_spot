@@ -1,5 +1,6 @@
 import os
 import time
+import math
 from collections import deque
 from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
@@ -41,12 +42,13 @@ def get_token_balance(token=TOKEN):
 
 # === ПОКУПКА ===
 def buy_all():
+    time.sleep(2)
     usdt = get_balance()
     price = get_price()
     usdt_to_spend = usdt * 0.95
-    qty = round(usdt_to_spend / price, 3)
+    qty = math.floor((usdt_to_spend / price) * 1000) / 1000
 
-    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем потратить: {usdt_to_spend:.2f} USDT")
+    print(f"[БАЛАНС] USDT: {usdt:.4f}, Цель: {usdt_to_spend:.2f}, Цена: {price:.4f}, Qty: {qty:.3f}")
 
     if usdt <= 0 or qty < 0.001:
         print("[ОШИБКА] Недостаточно средств для покупки")
@@ -60,8 +62,12 @@ def buy_all():
             orderType="Market",
             qty=qty
         )
-        print(f"[ВХОД] Куплено {qty:.3f} {TOKEN} по цене {price:.4f} USDT (на сумму {qty * price:.2f} USDT)")
-        return qty, price
+        time.sleep(2)
+        bought = get_token_balance()
+        new_price = get_price()
+        spent_real = bought * new_price
+        print(f"[ФАКТ] Куплено: {bought:.3f} {TOKEN}, Потрачено: {spent_real:.2f} USDT по цене: {new_price:.4f}")
+        return bought, new_price
     except Exception as e:
         print(f"[ОШИБКА ПОКУПКИ] {e}")
         return 0, 0
@@ -69,7 +75,7 @@ def buy_all():
 # === ПРОДАЖА ===
 def sell_all():
     actual_qty = get_token_balance()
-    sell_qty = round(actual_qty * 0.99, 2)
+    sell_qty = round(actual_qty * 0.99, 3)
 
     if sell_qty < 0.001:
         print("[СКИП] Слишком малая сумма для продажи")
@@ -84,7 +90,7 @@ def sell_all():
             orderType="Market",
             qty=sell_qty
         )
-        print(f"[ВЫХОД] Цена: {price:.4f}, Продано: {sell_qty:.2f} {TOKEN}")
+        print(f"[ВЫХОД] Цена: {price:.4f}, Продано: {sell_qty:.3f} {TOKEN}")
         return price
     except Exception as e:
         print(f"[ОШИБКА ПРОДАЖИ] {e}")
