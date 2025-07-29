@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from pybit.unified_trading import HTTP
 
 # === НАСТРОЙКИ ===
-PERCENT_ENTRY = 2.5           # Вход при +2.5%
+PERCENT_ENTRY = 8.5           # Вход при +8.5%
 TRAILING_STOP = 2.8           # Трейлинг-стоп -2.8%
 PRICE_WINDOW_MINUTES = 360    # 6 часов цен
 SYMBOL = "WIFUSDT"            # Торгуемая пара
