@@ -44,7 +44,7 @@ def get_token_balance(token=TOKEN):
 def buy_all():
     usdt = get_balance()
     price = get_price()
-    usdt_to_spend = usdt * 0.95
+    usdt_to_spend = usdt * 0.94  # ← изменено с 0.95 на 0.94
     qty = round(usdt_to_spend / price, 3)
 
     print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем потратить: {usdt_to_spend:.2f} USDT")
