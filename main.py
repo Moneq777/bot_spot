@@ -40,31 +40,36 @@ def get_token_balance(token=TOKEN):
             return float(coin.get("walletBalance", 0))
     return 0
 
-# === ПОКУПКА ЧЕРЕЗ КОНВЕРТАЦИЮ (используем 98% от баланса) ===
+# === ПОКУПКА С ЗАЩИТОЙ ===
 def buy_all():
     usdt = get_balance()
-    # Используем 98% от баланса для конвертации
-    usdt_to_spend = round(usdt * 0.98, 2)
-    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Планируем потратить: {usdt_to_spend:.2f} USDT")
-    
-    if usdt_to_spend <= 0:
-        print("[ОШИБКА] Недостаточно средств для покупки")
-        return 0, 0
+    price = get_price()
+    for percent in [0.90, 0.88, 0.85]:
+        usdt_to_spend = usdt * percent
+        qty = round(usdt_to_spend / price, 3)
 
-    try:
-        # Используем метод convert_exchange для конвертации USDT в токены
-        convert = client.convert_exchange(
-            fromCoin="USDT",
-            toCoin=TOKEN,
-            fromAmount=str(usdt_to_spend)
-        )
-        qty = float(convert["result"]["toAmount"])
-        price = usdt_to_spend / qty  # примерное значение
-        print(f"[ВХОД] Конвертировано {usdt_to_spend:.2f} USDT → {qty:.3f} {TOKEN} по цене ~{price:.4f} USDT")
-        return qty, price
-    except Exception as e:
-        print(f"[ОШИБКА КОНВЕРТАЦИИ] {e}")
-        return 0, 0
+        print(f"[ПОКУПКА] Попытка на {percent*100:.0f}%: {usdt_to_spend:.2f} USDT → {qty} {TOKEN}")
+
+        if usdt <= 0 or qty < 0.001:
+            print("[ОШИБКА] Недостаточно средств для покупки")
+            return 0, 0
+
+        try:
+            client.place_order(
+                category="spot",
+                symbol=SYMBOL,
+                side="Buy",
+                orderType="Market",
+                qty=qty
+            )
+            print(f"[ВХОД] Куплено {qty:.3f} {TOKEN} по цене {price:.4f} USDT (на сумму {qty * price:.2f} USDT)")
+            return qty, price
+        except Exception as e:
+            print(f"[ОШИБКА ПОКУПКИ] Попытка на {percent*100:.0f}% неудачна: {e}")
+            time.sleep(1)
+
+    print("[ОШИБКА] Все попытки покупки неудачны")
+    return 0, 0
 
 # === ПРОДАЖА ===
 def sell_all():
@@ -118,7 +123,6 @@ def track_trade(entry_price, qty):
     while True:
         price = get_price()
 
-        # Выход при +3%
         if price >= entry_price * (1 + FIX_PROFIT / 100):
             print(f"[ФИКСАЦИЯ] Цена достигла +{FIX_PROFIT}%: {price:.4f}")
             exit_price = sell_all()
@@ -130,7 +134,6 @@ def track_trade(entry_price, qty):
             time.sleep(180)
             return
 
-        # Трейлинг-стоп
         if price > peak:
             peak = price
             below_counter = 0
