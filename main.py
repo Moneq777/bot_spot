@@ -40,31 +40,30 @@ def get_token_balance(token=TOKEN):
             return float(coin.get("walletBalance", 0))
     return 0
 
-# === ПОКУПКА ===
+# === ПОКУПКА ЧЕРЕЗ КОНВЕРТАЦИЮ (используем 98% от баланса) ===
 def buy_all():
     usdt = get_balance()
-    price = get_price()
-    usdt_to_spend = usdt * 0.94  # ← изменено с 0.95 на 0.94
-    qty = round(usdt_to_spend / price, 3)
-
-    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Цена: {price:.4f}, Планируем потратить: {usdt_to_spend:.2f} USDT")
-
-    if usdt <= 0 or qty < 0.001:
+    # Используем 98% от баланса для конвертации
+    usdt_to_spend = round(usdt * 0.98, 2)
+    print(f"[БАЛАНС] Доступно: {usdt:.4f} USDT, Планируем потратить: {usdt_to_spend:.2f} USDT")
+    
+    if usdt_to_spend <= 0:
         print("[ОШИБКА] Недостаточно средств для покупки")
         return 0, 0
 
     try:
-        client.place_order(
-            category="spot",
-            symbol=SYMBOL,
-            side="Buy",
-            orderType="Market",
-            qty=qty
+        # Используем метод convert_exchange для конвертации USDT в токены
+        convert = client.convert_exchange(
+            fromCoin="USDT",
+            toCoin=TOKEN,
+            fromAmount=str(usdt_to_spend)
         )
-        print(f"[ВХОД] Куплено {qty:.3f} {TOKEN} по цене {price:.4f} USDT (на сумму {qty * price:.2f} USDT)")
+        qty = float(convert["result"]["toAmount"])
+        price = usdt_to_spend / qty  # примерное значение
+        print(f"[ВХОД] Конвертировано {usdt_to_spend:.2f} USDT → {qty:.3f} {TOKEN} по цене ~{price:.4f} USDT")
         return qty, price
     except Exception as e:
-        print(f"[ОШИБКА ПОКУПКИ] {e}")
+        print(f"[ОШИБКА КОНВЕРТАЦИИ] {e}")
         return 0, 0
 
 # === ПРОДАЖА ===
